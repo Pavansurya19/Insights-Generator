@@ -5,7 +5,7 @@
 
 # Gemini model to be used
 # Recommended: fast, free-tier friendly, stable
-GEMINI_MODEL = "gemini-1.5-flash"
+GEMINI_MODEL = ""gemini-pro""
 
 # Optional: app metadata (useful later)
 APP_NAME = "AI Business Insights Generator"
