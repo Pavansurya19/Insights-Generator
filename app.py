@@ -9,35 +9,76 @@ from prompts import insights_prompt, question_prompt
 from config import GEMINI_ENDPOINT
 
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="AI Business Insights Assistant", layout="wide")
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="AI Business Insights Assistant",
+    layout="wide"
+)
 
-# ---------------- CSS ----------------
+# ---------------- STYLING ----------------
 st.markdown("""
 <style>
-body { background-color: #0f0f0f; }
+body {
+    background-color: #0f0f0f;
+}
 
-.center {
-    height: 70vh;
+/* Center title */
+.title-container {
+    text-align: center;
+    margin-top: 90px;
+}
+
+/* Prompt UI */
+.prompt-container {
     display: flex;
-    flex-direction: column;
     justify-content: center;
+    margin-top: 25px;
+}
+
+.prompt-box {
+    width: 60%;
+    background: #1f1f1f;
+    border-radius: 40px;
+    padding: 16px 22px;
+    display: flex;
     align-items: center;
+    border: 1px solid #333;
+}
+
+.prompt-box input {
+    background: transparent;
+    border: none;
+    outline: none;
+    color: white;
+    width: 100%;
+    font-size: 1.1rem;
+}
+
+.send-btn {
+    background: #2a2a2a;
+    border-radius: 50%;
+    border: none;
+    width: 42px;
+    height: 42px;
+    margin-left: 12px;
+    cursor: pointer;
+    color: white;
+    font-size: 18px;
 }
 
 .chat-user {
     background: #2b2b2b;
     padding: 12px;
-    border-radius: 15px;
-    margin: 10px 0;
+    border-radius: 16px;
+    margin-top: 15px;
     text-align: right;
 }
 
 .chat-ai {
     background: #1f1f1f;
     padding: 12px;
-    border-radius: 15px;
-    margin: 10px 0;
+    border-radius: 16px;
+    margin-top: 10px;
     text-align: left;
 }
 
@@ -51,51 +92,65 @@ body { background-color: #0f0f0f; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- CENTER LANDING ----------------
+
+# ---------------- TITLE ----------------
 st.markdown("""
-<div class="center">
+<div class="title-container">
     <h1>✨ AI Business Insights Assistant</h1>
 </div>
 """, unsafe_allow_html=True)
 
-question = st.text_input("", placeholder="Ask anything about your data...")
+
+# ---------------- PROMPT BAR ----------------
+question = st.text_input(
+    "",
+    placeholder="Ask anything about your data...",
+    key="question_input",
+    label_visibility="collapsed"
+)
+
+submit = st.button("➤", help="Submit question")
+
 
 # ---------------- SIDEBAR ----------------
 with st.sidebar:
     uploaded_file = st.file_uploader("Upload your data file")
     api_key = st.text_input("Gemini API Key", type="password")
 
-# ---------------- WARNING ----------------
-if question and uploaded_file is None:
-    st.warning("⚠️ Please upload a file before asking questions.")
+
+# ---------------- WARNINGS ----------------
+if submit and uploaded_file is None:
+    st.warning("⚠️ Please upload a file before submitting your question.")
     st.stop()
+
 
 # ---------------- FILE UNDERSTANDING ----------------
 df = None
 
 if uploaded_file:
     with st.spinner("Understanding your file..."):
-        time.sleep(1.2)
+        time.sleep(1)
 
-    file_name = uploaded_file.name.lower()
+    filename = uploaded_file.name.lower()
 
     try:
-        if file_name.endswith(".csv"):
+        if filename.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
-        elif file_name.endswith(".xlsx"):
+        elif filename.endswith(".xlsx"):
             df = pd.read_excel(uploaded_file)
-        elif file_name.endswith(".json"):
+        elif filename.endswith(".json"):
             df = pd.read_json(uploaded_file)
-        elif file_name.endswith(".txt"):
+        elif filename.endswith(".txt"):
             df = pd.read_csv(uploaded_file, delimiter="|")
         else:
             st.error("Unsupported file format.")
             st.stop()
     except Exception:
-        st.error("Unable to read file.")
+        st.error("Unable to read the uploaded file.")
         st.stop()
 
     st.success("✅ File uploaded successfully")
+
 
 # ---------------- MAIN LOGIC ----------------
 if df is not None and api_key:
@@ -109,9 +164,9 @@ if df is not None and api_key:
     }
 
     # -------- KPIs --------
-    st.subheader("📌 Key KPIs")
-    kpis = detect_kpis(df)
+    st.subheader("📌 Key Performance Indicators")
 
+    kpis = detect_kpis(df)
     if kpis:
         cols = st.columns(len(kpis))
         for i, (k, v) in enumerate(kpis.items()):
@@ -128,34 +183,35 @@ if df is not None and api_key:
     # -------- INSIGHTS --------
     st.subheader("📄 Business Insights")
 
-    payload = {
+    insights_payload = {
         "contents": [{"parts": [{"text": insights_prompt(summary)}]}]
     }
 
-    r = requests.post(
+    insights_response = requests.post(
         f"{GEMINI_ENDPOINT}?key={api_key}",
         headers={"Content-Type": "application/json"},
-        json=payload
+        json=insights_payload
     )
 
-    if r.status_code == 200:
-        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+    if insights_response.status_code == 200:
+        text = insights_response.json()["candidates"][0]["content"]["parts"][0]["text"]
         st.markdown(text)
 
-    # -------- CHAT --------
-    if question:
+    # -------- QUESTION CHAT --------
+    if submit and question:
+
         st.markdown(f"<div class='chat-user'>{question}</div>", unsafe_allow_html=True)
 
         q_payload = {
             "contents": [{"parts": [{"text": question_prompt(summary, question)}]}]
         }
 
-        qr = requests.post(
+        q_response = requests.post(
             f"{GEMINI_ENDPOINT}?key={api_key}",
             headers={"Content-Type": "application/json"},
             json=q_payload
         )
 
-        if qr.status_code == 200:
-            ans = qr.json()["candidates"][0]["content"]["parts"][0]["text"]
-            st.markdown(f"<div class='chat-ai'>{ans}</div>", unsafe_allow_html=True)
+        if q_response.status_code == 200:
+            answer = q_response.json()["candidates"][0]["content"]["parts"][0]["text"]
+            st.markdown(f"<div class='chat-ai'>{answer}</div>", unsafe_allow_html=True)
