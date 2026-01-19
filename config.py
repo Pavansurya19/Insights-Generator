@@ -1,3 +1,1 @@
-# config.py
-
-GEMINI_MODEL = "gemini-pro"
+GEMINI_ENDPOINT = "https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent"
