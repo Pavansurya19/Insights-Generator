@@ -1,59 +1,46 @@
 import streamlit as st
 import pandas as pd
-import google.generativeai as genai
+import requests
+import json
 
-from config import GEMINI_MODEL
-from prompts import SYSTEM_PROMPT
+from config import GEMINI_ENDPOINT
 
 
-# ---------------- PAGE CONFIG ----------------
 st.set_page_config(
     page_title="AI Business Insights Generator",
     layout="wide"
 )
 
-st.title("📊 AI Business Insights Generator")
-st.caption("Powered by Google Gemini")
+st.title("📊 AI Business Insights Generator (Gemini REST)")
 
 
-# ---------------- SIDEBAR ----------------
 with st.sidebar:
-    st.header("Upload Dataset")
-
-    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
-
+    uploaded_file = st.file_uploader("Upload CSV", type=["csv"])
     analysis_type = st.selectbox(
         "Analysis Type",
         ["General Business", "Sales", "Marketing", "Finance"]
     )
-
     api_key = st.text_input("Gemini API Key", type="password")
     generate = st.button("Generate Insights")
 
 
-# ---------------- MAIN LOGIC ----------------
 if generate:
 
     if uploaded_file is None:
-        st.error("Please upload a CSV file.")
+        st.error("Upload CSV file.")
         st.stop()
 
     if not api_key:
-        st.error("Please enter your Gemini API key.")
+        st.error("Enter Gemini API key.")
         st.stop()
 
-    # -------- SAFE CSV LOADING --------
     try:
         uploaded_file.seek(0)
         df = pd.read_csv(uploaded_file)
     except Exception:
-        st.error("Unable to read CSV file. Please upload a valid CSV.")
+        st.error("Invalid CSV.")
         st.stop()
 
-    st.subheader("Dataset Preview")
-    st.dataframe(df.head())
-
-    # -------- DATA SUMMARY --------
     summary = {
         "rows": df.shape[0],
         "columns": df.shape[1],
@@ -62,24 +49,44 @@ if generate:
         "numeric_summary": df.describe().to_string()
     }
 
-    # -------- GEMINI SETUP --------
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(GEMINI_MODEL)
-
     prompt = f"""
-{SYSTEM_PROMPT}
+You are a senior business analyst.
 
-Type of analysis: {analysis_type}
+Perform {analysis_type} analysis and generate:
+
+- Executive Summary
+- Key Insights
+- Trends
+- Risks
+- Recommendations
 
 Dataset Summary:
-{summary}
-
-Format the response with clear headings and bullet points.
+{json.dumps(summary, indent=2)}
 """
 
-    with st.spinner("Analyzing dataset..."):
-        response = model.generate_content(prompt)
+    payload = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ]
+    }
 
-    st.success("Insights generated successfully")
+    with st.spinner("Analyzing..."):
+        response = requests.post(
+            f"{GEMINI_ENDPOINT}?key={api_key}",
+            headers={"Content-Type": "application/json"},
+            json=payload
+        )
 
-    st.markdown(response.text)
+    if response.status_code != 200:
+        st.error("Gemini API error. Please check your key or quota.")
+        st.stop()
+
+    result = response.json()
+    text = result["candidates"][0]["content"]["parts"][0]["text"]
+
+    st.success("Insights Generated")
+    st.markdown(text)
