@@ -4,7 +4,7 @@ import requests
 import json
 
 from analytics import detect_kpis, auto_charts
-from prompts import question_prompt
+from prompts import insights_prompt, question_prompt
 from config import GEMINI_ENDPOINT
 
 
