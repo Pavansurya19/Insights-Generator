@@ -63,7 +63,7 @@ body {
 st.markdown("""
 <div style="text-align:center; margin-top:90px;">
     <h1 style="font-size:3.2rem; font-weight:800;">
-        ✨ AI Business Insights Assistant
+        AI Business Insights Assistant
     </h1>
 </div>
 """, unsafe_allow_html=True)
