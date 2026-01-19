@@ -22,64 +22,30 @@ body {
     background-color: #0f0f0f;
 }
 
-/* Center title */
-.title-container {
-    text-align: center;
-    margin-top: 90px;
+.fade-in {
+    animation: fadeIn 0.6s ease-in-out;
 }
 
-/* Prompt UI */
-.prompt-container {
-    display: flex;
-    justify-content: center;
-    margin-top: 25px;
-}
-
-.prompt-box {
-    width: 60%;
-    background: #1f1f1f;
-    border-radius: 40px;
-    padding: 16px 22px;
-    display: flex;
-    align-items: center;
-    border: 1px solid #333;
-}
-
-.prompt-box input {
-    background: transparent;
-    border: none;
-    outline: none;
-    color: white;
-    width: 100%;
-    font-size: 1.1rem;
-}
-
-.send-btn {
-    background: #2a2a2a;
-    border-radius: 50%;
-    border: none;
-    width: 42px;
-    height: 42px;
-    margin-left: 12px;
-    cursor: pointer;
-    color: white;
-    font-size: 18px;
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .chat-user {
     background: #2b2b2b;
-    padding: 12px;
-    border-radius: 16px;
-    margin-top: 15px;
+    padding: 14px;
+    border-radius: 18px;
+    margin-top: 20px;
     text-align: right;
+    font-size: 1.05rem;
 }
 
 .chat-ai {
     background: #1f1f1f;
-    padding: 12px;
-    border-radius: 16px;
-    margin-top: 10px;
-    text-align: left;
+    padding: 16px;
+    border-radius: 18px;
+    margin-top: 12px;
+    font-size: 1.05rem;
 }
 
 .kpi-box {
@@ -95,21 +61,27 @@ body {
 
 # ---------------- TITLE ----------------
 st.markdown("""
-<div class="title-container">
-    <h1>✨ AI Business Insights Assistant</h1>
+<div style="text-align:center; margin-top:90px;">
+    <h1 style="font-size:3.2rem; font-weight:800;">
+        ✨ AI Business Insights Assistant
+    </h1>
 </div>
 """, unsafe_allow_html=True)
 
 
-# ---------------- PROMPT BAR ----------------
-question = st.text_input(
-    "",
-    placeholder="Ask anything about your data...",
-    key="question_input",
-    label_visibility="collapsed"
-)
+# ---------------- GEMINI STYLE INPUT ----------------
+col1, col2 = st.columns([6, 1])
 
-submit = st.button("➤", help="Submit question")
+with col1:
+    question = st.text_input(
+        "",
+        placeholder="Ask anything about your data...",
+        key="question_input",
+        label_visibility="collapsed"
+    )
+
+with col2:
+    submit = st.button("➤")
 
 
 # ---------------- SIDEBAR ----------------
@@ -120,7 +92,7 @@ with st.sidebar:
 
 # ---------------- WARNINGS ----------------
 if submit and uploaded_file is None:
-    st.warning("⚠️ Please upload a file before submitting your question.")
+    st.warning("⚠️ Please upload a file before asking a question.")
     st.stop()
 
 
@@ -131,22 +103,22 @@ if uploaded_file:
     with st.spinner("Understanding your file..."):
         time.sleep(1)
 
-    filename = uploaded_file.name.lower()
+    name = uploaded_file.name.lower()
 
     try:
-        if filename.endswith(".csv"):
+        if name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
-        elif filename.endswith(".xlsx"):
+        elif name.endswith(".xlsx"):
             df = pd.read_excel(uploaded_file)
-        elif filename.endswith(".json"):
+        elif name.endswith(".json"):
             df = pd.read_json(uploaded_file)
-        elif filename.endswith(".txt"):
+        elif name.endswith(".txt"):
             df = pd.read_csv(uploaded_file, delimiter="|")
         else:
             st.error("Unsupported file format.")
             st.stop()
     except Exception:
-        st.error("Unable to read the uploaded file.")
+        st.error("Unable to read file.")
         st.stop()
 
     st.success("✅ File uploaded successfully")
@@ -163,7 +135,7 @@ if df is not None and api_key:
         "stats": df.describe().to_string()
     }
 
-    # -------- KPIs --------
+    # ---------- KPIs ----------
     st.subheader("📌 Key Performance Indicators")
 
     kpis = detect_kpis(df)
@@ -175,43 +147,57 @@ if df is not None and api_key:
                 unsafe_allow_html=True
             )
 
-    # -------- CHARTS --------
+    # ---------- CHARTS ----------
     st.subheader("📊 Auto Charts")
     for fig in auto_charts(df):
         st.pyplot(fig)
 
-    # -------- INSIGHTS --------
+    # ---------- INSIGHTS ----------
     st.subheader("📄 Business Insights")
 
-    insights_payload = {
+    payload = {
         "contents": [{"parts": [{"text": insights_prompt(summary)}]}]
     }
 
-    insights_response = requests.post(
+    r = requests.post(
         f"{GEMINI_ENDPOINT}?key={api_key}",
         headers={"Content-Type": "application/json"},
-        json=insights_payload
+        json=payload
     )
 
-    if insights_response.status_code == 200:
-        text = insights_response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        st.markdown(text)
+    if r.status_code == 200:
+        insights_text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        st.markdown(f"<div class='fade-in'>{insights_text}</div>", unsafe_allow_html=True)
 
-    # -------- QUESTION CHAT --------
+    # ---------- CHAT ----------
     if submit and question:
 
-        st.markdown(f"<div class='chat-user'>{question}</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div class='chat-user fade-in'>{question}</div>",
+            unsafe_allow_html=True
+        )
 
         q_payload = {
             "contents": [{"parts": [{"text": question_prompt(summary, question)}]}]
         }
 
-        q_response = requests.post(
+        qr = requests.post(
             f"{GEMINI_ENDPOINT}?key={api_key}",
             headers={"Content-Type": "application/json"},
             json=q_payload
         )
 
-        if q_response.status_code == 200:
-            answer = q_response.json()["candidates"][0]["content"]["parts"][0]["text"]
-            st.markdown(f"<div class='chat-ai'>{answer}</div>", unsafe_allow_html=True)
+        if qr.status_code == 200:
+            answer = qr.json()["candidates"][0]["content"]["parts"][0]["text"]
+
+            placeholder = st.empty()
+            typed_text = ""
+
+            # typing animation
+            for word in answer.split(" "):
+                typed_text += word + " "
+                placeholder.markdown(
+                    f"<div class='chat-ai'>{typed_text}</div>",
+                    unsafe_allow_html=True
+                )
+                time.sleep(0.03)
