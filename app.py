@@ -2,89 +2,116 @@ import streamlit as st
 import pandas as pd
 import requests
 import json
+import time
 
 from analytics import detect_kpis, auto_charts
 from prompts import insights_prompt, question_prompt
 from config import GEMINI_ENDPOINT
 
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="AI Business Insights Assistant",
-    layout="wide"
-)
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="AI Business Insights Assistant", layout="wide")
 
-# ---------------- STYLING ----------------
+# ---------------- CSS ----------------
 st.markdown("""
 <style>
 body { background-color: #0f0f0f; }
 
-input {
-    background-color: #1f1f1f !important;
-    color: white !important;
-    border-radius: 25px !important;
-    padding: 12px !important;
-    border: 1px solid #333 !important;
+.center {
+    height: 70vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
 }
 
-.chat-box {
-    background-color: #1f1f1f;
-    padding: 1.2rem;
-    border-radius: 16px;
-    margin-top: 1rem;
+.chat-user {
+    background: #2b2b2b;
+    padding: 12px;
+    border-radius: 15px;
+    margin: 10px 0;
+    text-align: right;
+}
+
+.chat-ai {
+    background: #1f1f1f;
+    padding: 12px;
+    border-radius: 15px;
+    margin: 10px 0;
+    text-align: left;
 }
 
 .kpi-box {
-    background-color: #1a1a1a;
+    background: #1a1a1a;
     padding: 1rem;
     border-radius: 12px;
     text-align: center;
-    border: 1px solid #2a2a2a;
+    border: 1px solid #333;
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- TITLE ----------------
-st.markdown(
-    "<h1 style='text-align:center;'>✨ AI Business Insights Assistant</h1>",
-    unsafe_allow_html=True
-)
+# ---------------- CENTER LANDING ----------------
+st.markdown("""
+<div class="center">
+    <h1>✨ AI Business Insights Assistant</h1>
+</div>
+""", unsafe_allow_html=True)
 
-question_top = st.text_input(
-    "",
-    placeholder="Ask anything about your data...",
-    key="top_question"
-)
-
-st.divider()
+question = st.text_input("", placeholder="Ask anything about your data...")
 
 # ---------------- SIDEBAR ----------------
 with st.sidebar:
-    uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
+    uploaded_file = st.file_uploader("Upload your data file")
     api_key = st.text_input("Gemini API Key", type="password")
 
-# ---------------- MAIN ----------------
-if uploaded_file and api_key:
+# ---------------- WARNING ----------------
+if question and uploaded_file is None:
+    st.warning("⚠️ Please upload a file before asking questions.")
+    st.stop()
+
+# ---------------- FILE UNDERSTANDING ----------------
+df = None
+
+if uploaded_file:
+    with st.spinner("Understanding your file..."):
+        time.sleep(1.2)
+
+    file_name = uploaded_file.name.lower()
 
     try:
-        uploaded_file.seek(0)
-        df = pd.read_csv(uploaded_file)
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(uploaded_file)
+        elif file_name.endswith(".xlsx"):
+            df = pd.read_excel(uploaded_file)
+        elif file_name.endswith(".json"):
+            df = pd.read_json(uploaded_file)
+        elif file_name.endswith(".txt"):
+            df = pd.read_csv(uploaded_file, delimiter="|")
+        else:
+            st.error("Unsupported file format.")
+            st.stop()
     except Exception:
-        st.error("Invalid CSV file.")
+        st.error("Unable to read file.")
         st.stop()
+
+    st.success("✅ File uploaded successfully")
+
+# ---------------- MAIN LOGIC ----------------
+if df is not None and api_key:
 
     summary = {
         "rows": df.shape[0],
         "columns": df.shape[1],
         "column_names": list(df.columns),
-        "missing_values": df.isnull().sum().to_dict(),
-        "statistics": df.describe().to_string()
+        "missing": df.isnull().sum().to_dict(),
+        "stats": df.describe().to_string()
     }
 
-    # ---------- KPIs ----------
-    st.subheader("📌 Key Performance Indicators")
-
+    # -------- KPIs --------
+    st.subheader("📌 Key KPIs")
     kpis = detect_kpis(df)
+
     if kpis:
         cols = st.columns(len(kpis))
         for i, (k, v) in enumerate(kpis.items()):
@@ -92,55 +119,43 @@ if uploaded_file and api_key:
                 f"<div class='kpi-box'><h3>{k}</h3><p>{round(v,2)}</p></div>",
                 unsafe_allow_html=True
             )
-    else:
-        st.info("No KPI-related columns detected.")
 
-    # ---------- CHARTS ----------
-    st.subheader("📊 Automatic Charts")
-    charts = auto_charts(df)
-    for fig in charts:
+    # -------- CHARTS --------
+    st.subheader("📊 Auto Charts")
+    for fig in auto_charts(df):
         st.pyplot(fig)
 
-    # ---------- INSIGHTS ----------
+    # -------- INSIGHTS --------
     st.subheader("📄 Business Insights")
 
-    insights_prompt_text = insights_prompt(summary)
-
     payload = {
-        "contents": [{"parts": [{"text": insights_prompt_text}]}]
+        "contents": [{"parts": [{"text": insights_prompt(summary)}]}]
     }
 
-    response = requests.post(
+    r = requests.post(
         f"{GEMINI_ENDPOINT}?key={api_key}",
         headers={"Content-Type": "application/json"},
         json=payload
     )
 
-    if response.status_code == 200:
-        result = response.json()
-        insights_text = result["candidates"][0]["content"]["parts"][0]["text"]
-        st.markdown(insights_text)
-    else:
-        st.error("Gemini API error while generating insights.")
+    if r.status_code == 200:
+        text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
+        st.markdown(text)
 
-    # ---------- QUESTION CHAT ----------
-    if question_top:
-
-        q_prompt = question_prompt(summary, question_top)
+    # -------- CHAT --------
+    if question:
+        st.markdown(f"<div class='chat-user'>{question}</div>", unsafe_allow_html=True)
 
         q_payload = {
-            "contents": [{"parts": [{"text": q_prompt}]}]
+            "contents": [{"parts": [{"text": question_prompt(summary, question)}]}]
         }
 
-        q_response = requests.post(
+        qr = requests.post(
             f"{GEMINI_ENDPOINT}?key={api_key}",
             headers={"Content-Type": "application/json"},
             json=q_payload
         )
 
-        if q_response.status_code == 200:
-            q_result = q_response.json()
-            answer = q_result["candidates"][0]["content"]["parts"][0]["text"]
-            st.markdown(f"<div class='chat-box'>{answer}</div>", unsafe_allow_html=True)
-        else:
-            st.error("Gemini API error while answering question.")
+        if qr.status_code == 200:
+            ans = qr.json()["candidates"][0]["content"]["parts"][0]["text"]
+            st.markdown(f"<div class='chat-ai'>{ans}</div>", unsafe_allow_html=True)
