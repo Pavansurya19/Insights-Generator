@@ -147,10 +147,10 @@ if df is not None and api_key:
                 unsafe_allow_html=True
             )
 
-    # ---------- CHARTS ----------
-    st.subheader("📊 Auto Charts")
-    for fig in auto_charts(df):
-        st.pyplot(fig)
+    # # ---------- CHARTS ----------
+    # st.subheader("📊 Auto Charts")
+    # for fig in auto_charts(df):
+    #     st.pyplot(fig)
 
     # ---------- INSIGHTS ----------
     st.subheader("📄 Business Insights")
