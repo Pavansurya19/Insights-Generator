@@ -1,52 +1,23 @@
 import streamlit as st
 import pandas as pd
-import requests
-import json
 import time
 
-from analytics import detect_kpis, auto_charts
+from google import genai
+from analytics import auto_charts
 from prompts import insights_prompt, question_prompt
-from config import GEMINI_ENDPOINT
 
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
-    page_title="AI Business Insights Assistant",
+    page_title="InsightIQ — AI Business Insights",
     layout="wide"
 )
+
 
 # ---------------- STYLING ----------------
 st.markdown("""
 <style>
-body {
-    background-color: #0f0f0f;
-}
-
-.fade-in {
-    animation: fadeIn 0.6s ease-in-out;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-}
-
-.chat-user {
-    background: #2b2b2b;
-    padding: 14px;
-    border-radius: 18px;
-    margin-top: 20px;
-    text-align: right;
-    font-size: 1.05rem;
-}
-
-.chat-ai {
-    background: #1f1f1f;
-    padding: 16px;
-    border-radius: 18px;
-    margin-top: 12px;
-    font-size: 1.05rem;
-}
+body { background-color: #0f0f0f; }
 
 .kpi-box {
     background: #1a1a1a;
@@ -55,52 +26,44 @@ body {
     text-align: center;
     border: 1px solid #333;
 }
+
+.chat-user {
+    background: #2b2b2b;
+    padding: 14px;
+    border-radius: 18px;
+    margin-top: 20px;
+    text-align: right;
+}
+
+.chat-ai {
+    background: #1f1f1f;
+    padding: 16px;
+    border-radius: 18px;
+    margin-top: 12px;
+}
 </style>
 """, unsafe_allow_html=True)
 
 
 # ---------------- TITLE ----------------
 st.markdown("""
-<div style="text-align:center; margin-top:90px;">
-    <h1 style="font-size:3.2rem; font-weight:800;">
-    InsightIQ — Business Intelligence Assistant
-    </h1>
-</div>
+<h1 style="text-align:center; margin-top:40px;">
+InsightIQ — Business Intelligence Assistant
+</h1>
 """, unsafe_allow_html=True)
-
-
-# ---------------- GEMINI STYLE INPUT ----------------
-col1, col2 = st.columns([6, 1])
-
-with col1:
-    question = st.text_input(
-        "",
-        placeholder="Ask anything about your data...",
-        key="question_input",
-        label_visibility="collapsed"
-    )
-
-with col2:
-    submit = st.button("➤")
 
 
 # ---------------- SIDEBAR ----------------
 with st.sidebar:
-    uploaded_file = st.file_uploader("Upload your data file")
-    api_key = st.text_input("Gemini API Key", type="password")
+    uploaded_file = st.file_uploader("📂 Upload your data file")
+    api_key = st.text_input("🔑 Gemini API Key", type="password")
 
 
-# ---------------- WARNINGS ----------------
-if submit and uploaded_file is None:
-    st.warning("⚠️ Please upload a file before asking a question.")
-    st.stop()
-
-
-# ---------------- FILE UNDERSTANDING ----------------
+# ---------------- FILE LOADING ----------------
 df = None
 
 if uploaded_file:
-    with st.spinner("Understanding your file..."):
+    with st.spinner("Reading file..."):
         time.sleep(1)
 
     name = uploaded_file.name.lower()
@@ -117,87 +80,119 @@ if uploaded_file:
         else:
             st.error("Unsupported file format.")
             st.stop()
-    except Exception:
-        st.error("Unable to read file.")
+
+        st.success("✅ File uploaded successfully")
+
+    except Exception as e:
+        st.error("❌ Unable to read the file")
+        st.code(str(e))
         st.stop()
 
-    st.success("✅ File uploaded successfully")
+
+# ---------------- STOP IF API KEY MISSING ----------------
+if df is not None and not api_key:
+    st.warning("⚠️ Please enter your Gemini API key in the sidebar.")
+    st.stop()
 
 
-# ---------------- MAIN LOGIC ----------------
-if df is not None and api_key:
+# ---------------- CREATE GEMINI CLIENT ----------------
+client = None
+if api_key:
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as e:
+        st.error("❌ Failed to initialize Gemini client")
+        st.code(str(e))
+        st.stop()
 
+
+# ===================== AUTO SUMMARY =====================
+if df is not None and client:
+
+    # ---------- SAFE DATA SUMMARY ----------
     summary = {
-        "rows": df.shape[0],
-        "columns": df.shape[1],
+        "rows": int(df.shape[0]),
+        "columns": int(df.shape[1]),
         "column_names": list(df.columns),
-        "missing": df.isnull().sum().to_dict(),
-        "stats": df.describe().to_string()
+        "missing_values": df.isnull().sum().to_dict(),
+        "numeric_statistics": df.describe().round(2).to_string()
     }
 
-    # ---------- KPIs ----------
-    st.subheader("📌 Key Performance Indicators")
+    # ---------- DATASET OVERVIEW ----------
+    st.subheader("📊 Dataset Overview")
 
-    kpis = detect_kpis(df)
-    if kpis:
-        cols = st.columns(len(kpis))
-        for i, (k, v) in enumerate(kpis.items()):
-            cols[i].markdown(
-                f"<div class='kpi-box'><h3>{k}</h3><p>{round(v,2)}</p></div>",
-                unsafe_allow_html=True
-            )
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Rows", summary["rows"])
+    c2.metric("Columns", summary["columns"])
+    c3.metric("Missing Cells", int(df.isnull().sum().sum()))
 
-    # # ---------- CHARTS ----------
-    # st.subheader("📊 Auto Charts")
-    # for fig in auto_charts(df):
-    #     st.pyplot(fig)
+    st.divider()
 
-    # ---------- INSIGHTS ----------
-    st.subheader("📄 Business Insights")
+    # ---------- AUTO CHARTS ----------
+    st.subheader("📈 Auto Visualizations")
 
-    payload = {
-        "contents": [{"parts": [{"text": insights_prompt(summary)}]}]
-    }
+    charts = auto_charts(df)
 
-    r = requests.post(
-        f"{GEMINI_ENDPOINT}?key={api_key}",
-        headers={"Content-Type": "application/json"},
-        json=payload
+    if charts:
+        for chart in charts:
+            if hasattr(chart, "to_dict"):
+                st.plotly_chart(chart, use_container_width=True)
+            else:
+                st.pyplot(chart, clear_figure=True)
+    else:
+        st.info("No suitable charts could be generated.")
+
+    st.divider()
+
+    # ---------- AI DATASET INSIGHTS ----------
+    st.subheader("🧠 Automated Business Insights")
+
+    try:
+        response = client.models.generate_content(
+            model="models/gemini-flash-latest",
+            contents=insights_prompt(summary)
+        )
+
+        st.markdown(response.text)
+
+    except Exception as e:
+        st.error("❌ Gemini Error while generating insights")
+        st.code(str(e))
+
+    st.divider()
+
+
+# ===================== USER QUESTIONS =====================
+if df is not None and client:
+
+    st.subheader("💬 Ask Questions About Your Data")
+
+    question = st.text_input(
+        "Ask a question about the dataset",
+        placeholder="e.g. Which category has the highest revenue?",
+        label_visibility="collapsed"
     )
 
-    if r.status_code == 200:
-        insights_text = r.json()["candidates"][0]["content"]["parts"][0]["text"]
-        st.markdown(f"<div class='fade-in'>{insights_text}</div>", unsafe_allow_html=True)
+    ask = st.button("Ask")
 
-    # ---------- CHAT ----------
-    if submit and question:
+    if ask and question.strip():
 
         st.markdown(
-            f"<div class='chat-user fade-in'>{question}</div>",
+            f"<div class='chat-user'>{question}</div>",
             unsafe_allow_html=True
         )
 
-        q_payload = {
-            "contents": [{"parts": [{"text": question_prompt(summary, question)}]}]
-        }
+        try:
+            answer = client.models.generate_content(
+                model="models/gemini-flash-latest",
+                contents=question_prompt(summary, question)
+            )
 
-        qr = requests.post(
-            f"{GEMINI_ENDPOINT}?key={api_key}",
-            headers={"Content-Type": "application/json"},
-            json=q_payload
-        )
+            st.markdown(
+                f"<div class='chat-ai'>{answer.text}</div>",
+                unsafe_allow_html=True
+            )
 
-        if qr.status_code == 200:
-            answer = qr.json()["candidates"][0]["content"]["parts"][0]["text"]
-
-            placeholder = st.empty()
-            typed_text = ""
-
-            # typing animation
-            for word in answer.split(" "):
-                typed_text += word + " "
-                placeholder.markdown(
-                    f"<div class='chat-ai'>{typed_text}</div>",
-                    unsafe_allow_html=True
-                )
-                time.sleep(0.03)
+        except Exception as e:
+            st.error("❌ Gemini Error while answering question")
+            st.code(str(e))
